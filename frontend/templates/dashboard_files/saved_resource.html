@@ -1,0 +1,476 @@
+
+<!-- saved from url=(0048)https://app.onecompiler.com/43qa9nfx5_43qk9gf6e/ -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head><body>{% extends "base.html" %}
+
+{% block title %}Dashboard - Suits AI{% endblock %}
+
+{% block content %}
+<div class="flex h-screen bg-gray-100">
+    <!-- Sidebar -->
+    <div class="w-64 sidebar flex-shrink-0 flex flex-col py-4 bg-white shadow-lg">
+        <div class="px-4 mb-6">
+            <div class="text-2xl font-bold text-gray-800 mb-4">Suits AI</div>
+            <button onclick="newChat()" class="w-full p-3 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors" title="New Chat">
+                <i class="fas fa-plus mr-2"></i> New Chat
+            </button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto px-4">
+            <div class="mb-4">
+                <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">Chat Sessions</h3>
+                <div class="space-y-2">
+                    {% for session in chat_sessions %}
+                    <button onclick="switchChatSession(&#39;{{ session.id }}&#39;)" class="chat-session-btn w-full p-3 rounded-lg text-left hover:bg-gray-100 transition-colors border-l-4 border-transparent hover:border-blue-500 
+                            {% if session.id == session_id %}bg-blue-50 border-blue-500{% endif %}" data-session-id="{{ session.id }}">
+                        <div class="flex items-center mb-1">
+                            <i class="fas fa-comments text-blue-500 mr-2"></i>
+                            <span class="text-sm font-medium text-gray-900 truncate">
+                                {% if session.document_id %}
+                                    Document Chat
+                                {% else %}
+                                    General Chat
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="text-xs text-gray-500">{{ session.created_at.strftime('%m/%d %H:%M') }}</div>
+                    </button>
+                    {% else %}
+                    <p class="text-gray-500 text-sm italic">No chat sessions yet</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="flex-grow"></div>
+        <a href="https://app.onecompiler.com/logout" class="p-3 rounded-lg hover:bg-gray-200">
+            <i class="fas fa-sign-out-alt"></i>
+        </a>
+    </div>
+    
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col">
+        <div class="flex-1 p-8 overflow-y-auto" id="chat-messages">
+            <!-- Messages will go here -->
+        </div>
+
+        <!-- Chat Input Area -->
+        <div class="border-t bg-white p-4">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex items-center space-x-4">
+                    <!-- Upload Button -->
+                    <button onclick="triggerFileUpload()" class="p-3 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors">
+                        <i class="fas fa-paperclip text-gray-600"></i>
+                    </button>
+
+                    <!-- Textarea container with relative positioning -->
+                    <div class="relative flex-1">
+                        <textarea id="chat-input" placeholder="Type message or upload document for analysis..." class="w-full p-4 pr-16 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" rows="1"></textarea>
+                        
+                        <!-- Send Button -->
+                        <button onclick="sendMessage()" class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 transition-colors">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2">Supports PDF, image files, and plain text.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<input type="file" id="file-input" accept=".pdf,.txt,.jpg,.jpeg,.png,.gif,.bmp" class="hidden" onchange="setSelectedFile(event)">
+
+
+<!-- Upload Modal -->
+<div id="upload-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 class="text-lg font-semibold mb-4">Upload Legal Document</h3>
+        
+        <div id="upload-dropzone" class="upload-dropzone rounded-lg p-8 text-center mb-4">
+            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+            <p class="text-gray-600 mb-2">Drag and drop your file here, or click to select</p>
+            <p class="text-sm text-gray-500">Supports PDF, images (JPG, PNG), and text files</p>
+            <input type="file" id="file-input" class="hidden" accept=".pdf,.txt,.jpg,.jpeg,.png,.gif,.bmp,.tiff">
+        </div>
+        
+        <div class="flex justify-end space-x-2">
+            <button onclick="hideUploadModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">
+                Cancel
+            </button>
+            <button onclick="uploadFile()" id="upload-btn" class="btn-primary text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all">
+                Upload &amp; Analyze
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentSessionId = {{ session_id }};
+let selectedFile = null;
+let sidebarOpen = true; // To track sidebar state
+
+// Chat functionality
+function sendMessage() {
+    console.debug('sendMessage called');
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    
+    console.debug('Current session ID:', currentSessionId);
+    console.debug('Message:', message);
+    
+    if (!message) {
+        console.debug('Empty message, returning');
+        return;
+    }
+    
+    // Add user message to chat
+    addMessage(message, 'user');
+    input.value = '';
+    autoResizeTextarea(input);
+    
+    // Check if message is a long text that should be analyzed (> 100 words)
+    const wordCount = message.split(/\s+/).length;
+    
+    if (wordCount > 100) {
+        // Process as legal document text
+        processLegalText(message);
+    } else {
+        // Process as regular chat message
+        console.debug('Processing as regular chat message');
+        const formData = new FormData();
+        formData.append('message', message);
+        formData.append('session_id', currentSessionId);
+        
+        console.debug('Sending POST to /chat with session_id:', currentSessionId);
+        fetch('/chat', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                addMessage(data.reply, 'assistant');
+            } else {
+                addMessage('Error: ' + data.error, 'assistant');
+            }
+        })
+        .catch(error => {
+            addMessage('Error: Could not send message', 'assistant');
+            console.error('Error:', error);
+        });
+    }
+}
+
+// Process legal text for analysis
+function processLegalText(text) {
+    addMessage('📝 Analyzing legal document text...', 'assistant');
+    
+    fetch('/analyze-text', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text: text })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentSessionId = data.session_id;
+            // Add analysis
+            addMessage(data.analysis, 'assistant');
+        } else {
+            addMessage('Error: ' + data.error, 'assistant');
+        }
+    })
+    .catch(error => {
+        addMessage('Error: Could not analyze text', 'assistant');
+        console.error('Error:', error);
+    });
+}
+
+
+function addMessage(content, sender) {
+    const chatMessages = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'flex items-start space-x-3';
+    
+    const avatar = sender === 'user' ? 
+        '<div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm"><i class="fas fa-user"></i></div>' :
+        '<div class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm"><i class="fas fa-balance-scale"></i></div>';
+    
+    const bubbleClass = sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant';
+    
+    messageDiv.innerHTML = `
+        ${avatar}
+        <div class="flex-1">
+            <div class="${bubbleClass} rounded-lg p-3 max-w-3xl">
+                <div class="message-content">${formatMessage(content)}</div>
+            </div>
+        </div>
+    `;
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+
+function newChat() {
+  const chatMessages = document.getElementById('chat-messages');
+  
+  // Check if the current chat is empty
+  if (chatMessages.innerHTML.trim() === '') {
+    showToast("The current chat is empty. Start a conversation first.", "warning");
+    return;
+  }
+  
+  fetch('/new-chat', { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        currentSessionId = data.session_id;
+        chatMessages.innerHTML = '';
+        showToast('New chat started', 'success');
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      showToast('Error starting new chat', 'error');
+    });
+}
+
+// Switch to a different chat session
+function switchChatSession(sessionId) {
+    if (sessionId === currentSessionId) {
+        return; // Already on this session
+    }
+    
+    currentSessionId = sessionId;
+    
+    // Fetch chat history for the selected session
+    fetch(`/chat-history/${sessionId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const chatMessages = document.getElementById('chat-messages');
+                chatMessages.innerHTML = '';
+                
+                // Display the chat history
+                data.history.forEach(msg => {
+                    // Add user message
+                    if (msg.user_input) {
+                        addMessage(msg.user_input, 'user');
+                    }
+                    // Add assistant reply
+                    if (msg.assistant_reply) {
+                        addMessage(msg.assistant_reply, 'assistant');
+                    }
+                });
+                
+                showToast('Switched to chat session', 'success');
+            } else {
+                showToast('Error loading chat history', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error loading chat history', 'error');
+        });
+}
+
+// Upload functionality
+function showUploadModal() {
+    document.getElementById('upload-modal').classList.remove('hidden');
+}
+
+function hideUploadModal() {
+    document.getElementById('upload-modal').classList.add('hidden');
+    selectedFile = null;
+}
+
+function uploadFile() {
+    if (!selectedFile) {
+        showToast('Please select a file first', 'error');
+        return;
+    }
+    
+    const uploadBtn = document.getElementById('upload-btn');
+    const originalText = uploadBtn.innerHTML;
+    uploadBtn.innerHTML = '<div class="spinner inline-block mr-2"></div>Analyzing...';
+    uploadBtn.disabled = true;
+    
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    
+    fetch('/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentSessionId = data.session_id;
+            document.getElementById('chat-messages').innerHTML = '';
+            
+            // Add upload message
+            addMessage(`Uploaded document: ${selectedFile.name}`, 'user');
+            // Add analysis
+            addMessage(data.analysis, 'assistant');
+            
+            hideUploadModal();
+            showToast('Document analyzed successfully', 'success');
+        } else {
+            showToast('Error: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error uploading file', 'error');
+    })
+    .finally(() => {
+        uploadBtn.innerHTML = originalText;
+        uploadBtn.disabled = false;
+    });
+}
+
+// File upload handling
+document.getElementById('file-input').addEventListener('change', function(e) {
+    selectedFile = e.target.files[0];
+    if (selectedFile) {
+        document.getElementById('upload-dropzone').innerHTML = `
+            <i class="fas fa-file text-4xl text-blue-500 mb-4"></i>
+            <p class="text-gray-800 font-medium">${selectedFile.name}</p>
+            <p class="text-sm text-gray-500">Ready to upload</p>
+        `;
+    }
+});
+
+// Drag and drop
+const dropzone = document.getElementById('upload-dropzone');
+dropzone.addEventListener('click', () => document.getElementById('file-input').click());
+
+dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+});
+
+dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('drag-over');
+});
+
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        selectedFile = files[0];
+        document.getElementById('upload-dropzone').innerHTML = `
+            <i class="fas fa-file text-4xl text-blue-500 mb-4"></i>
+            <p class="text-gray-800 font-medium">${selectedFile.name}</p>
+            <p class="text-sm text-gray-500">Ready to upload</p>
+        `;
+    }
+});
+
+// Sidebar Collapsible Toggle
+const sidebar = document.querySelector('.sidebar');
+document.getElementById('toggle-btn').addEventListener('click', () => {
+    sidebarOpen = !sidebarOpen;
+    sidebar.style.transform = sidebarOpen ? 'translateX(0)' : 'translateX(-100%)';
+});
+
+// Auto-resize textarea
+function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = (textarea.scrollHeight) + 'px';
+}
+
+// Format message content for display
+function formatMessage(content) {
+    // Handle markdown-style formatting
+    return content
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+}
+
+// Show toast notification
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `fixed top-4 right-4 p-4 rounded-lg text-white z-50 max-w-sm
+        ${type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+function triggerFileUpload() {
+    document.getElementById('file-input').click();
+}
+
+function setSelectedFile(event) {
+    const file = event.target.files[0];
+    if (file) {
+        uploadFile(file);
+    }
+}
+
+function uploadFile(file) {
+    addMessage('📄 Uploading and analyzing file: ' + file.name, 'assistant');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentSessionId = data.session_id;
+            addMessage('📊 Document Analysis Complete', 'assistant');
+            addMessage(data.analysis, 'assistant');
+        } else {
+            addMessage('❌ Error: ' + data.error, 'assistant');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        addMessage('❌ Error uploading file', 'assistant');
+    });
+}
+
+// Auto-scroll to bottom on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const chatMessages = document.getElementById('chat-messages');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Set up auto-resize for textarea
+    const textarea = document.getElementById('chat-input');
+    textarea.addEventListener('input', function() {
+        autoResizeTextarea(this);
+    });
+    
+    // Set up Enter key handler for textarea
+    textarea.addEventListener('keydown', function(event) {
+        console.debug('handleKeyDown called, key:', event.key, 'shiftKey:', event.shiftKey);
+        if (event.key === 'Enter' && !event.shiftKey) {
+            console.debug('Enter key pressed without shift, calling sendMessage');
+            event.preventDefault();
+            event.stopPropagation();
+            sendMessage();
+            return false;
+        }
+        // Allow Shift+Enter for new lines
+        if (event.key === 'Enter' && event.shiftKey) {
+            console.debug('Shift+Enter pressed, allowing default behavior');
+            // Let the default behavior happen for multiline
+            return true;
+        }
+    });
+});
+</script>
+{% endblock %}</body></html>

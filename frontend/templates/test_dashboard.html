@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-100">
+    <div class="p-8">
+        <h1 class="text-3xl font-bold mb-6">Dashboard Test</h1>
+        
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-xl font-semibold mb-4">Test Buttons</h2>
+            <button onclick="testAlert()" class="bg-blue-500 text-white px-4 py-2 rounded mr-2">Test Alert</button>
+            <button onclick="testConsole()" class="bg-green-500 text-white px-4 py-2 rounded mr-2">Test Console</button>
+            <button onclick="testFetch()" class="bg-red-500 text-white px-4 py-2 rounded mr-2">Test Fetch</button>
+        </div>
+        
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-xl font-semibold mb-4">Test Text Input</h2>
+            <input type="text" id="test-input" placeholder="Type something..." class="w-full p-2 border border-gray-300 rounded mb-2">
+            <button onclick="testInput()" class="bg-purple-500 text-white px-4 py-2 rounded">Test Input</button>
+        </div>
+        
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Test Results</h2>
+            <div id="test-results" class="text-gray-700"></div>
+        </div>
+    </div>
+    
+    <script>
+        function testAlert() {
+            alert('Button clicked successfully!');
+        }
+        
+        function testConsole() {
+            console.log('Console test successful!');
+            document.getElementById('test-results').innerHTML += '<p>Console test - check browser console</p>';
+        }
+        
+        function testFetch() {
+            fetch('/get-chat-sessions')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Fetch successful:', data);
+                    document.getElementById('test-results').innerHTML += '<p>Fetch test successful - check console</p>';
+                })
+                .catch(error => {
+                    console.error('Fetch failed:', error);
+                    document.getElementById('test-results').innerHTML += '<p>Fetch test failed - check console</p>';
+                });
+        }
+        
+        function testInput() {
+            const value = document.getElementById('test-input').value;
+            document.getElementById('test-results').innerHTML += `<p>Input value: "${value}"</p>`;
+        }
+    </script>
+</body>
+</html>

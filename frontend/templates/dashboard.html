@@ -1,0 +1,646 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Suits AI{% endblock %}
+
+{% block content %}
+<style>
+    .chat-bubble-user {
+        background-color: #3b82f6;
+        color: white;
+        margin-left: auto;
+        margin-right: 0;
+    }
+    .chat-bubble-assistant {
+        background-color: #f8fafc;
+        color: #1e293b;
+        border: 1px solid #e2e8f0;
+    }
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #ffffff;
+        border-top: 2px solid transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .sidebar {
+        width: 280px;
+        transition: width 0.3s ease;
+        overflow: hidden;
+    }
+    .sidebar.collapsed {
+        width: 80px;
+    }
+    .sidebar.collapsed .sidebar-text {
+        display: none !important;
+    }
+    .sidebar.collapsed .logo-text {
+        display: none !important;
+    }
+    .sidebar.collapsed .delete-chat-btn {
+        display: none !important;
+    }
+    .sidebar.collapsed .recent-chats-heading {
+        display: none !important;
+    }
+    .sidebar.collapsed .sidebar-item .text-sm {
+        display: none !important;
+    }
+    .sidebar.collapsed .sidebar-item .text-xs {
+        display: none !important;
+    }
+    .delete-chat-btn {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+    .sidebar-item:hover .delete-chat-btn {
+        opacity: 1;
+    }
+    .sidebar-item {
+        transition: all 0.2s ease;
+    }
+    .sidebar-item:hover {
+        background-color: #f1f5f9;
+        transform: translateX(2px);
+    }
+    .sidebar-item.active {
+        background-color: #e0f2fe;
+        border-right: 3px solid #0284c7;
+    }
+    .message-container {
+        animation: fadeIn 0.3s ease-in;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .typing-indicator {
+        display: none;
+        padding: 12px;
+        background-color: #f8fafc;
+        border-radius: 12px;
+        margin-bottom: 16px;
+        border: 1px solid #e2e8f0;
+    }
+    .typing-indicator.show {
+        display: block;
+    }
+    .typing-dots {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+    }
+    .typing-dot {
+        width: 8px;
+        height: 8px;
+        background-color: #64748b;
+        border-radius: 50%;
+        animation: typingDot 1.4s infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typingDot {
+        0%, 60%, 100% { transform: scale(0.8); opacity: 0.5; }
+        30% { transform: scale(1); opacity: 1; }
+    }
+    .upload-modal {
+        backdrop-filter: blur(8px);
+        background: rgba(0, 0, 0, 0.5);
+    }
+    .upload-zone {
+        border: 2px dashed #cbd5e1;
+        transition: all 0.3s ease;
+    }
+    .upload-zone:hover {
+        border-color: #3b82f6;
+        background-color: #f8fafc;
+    }
+    .upload-zone.dragover {
+        border-color: #3b82f6;
+        background-color: #eff6ff;
+    }
+</style>
+
+<div class="flex h-screen bg-gray-50">
+    <!-- Sidebar -->
+    <div class="sidebar bg-white shadow-lg flex flex-col" id="sidebar">
+        <!-- Header -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex items-center">
+                <button onclick="toggleSidebar()" class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                    <i class="fas fa-bars text-gray-600"></i>
+                </button>
+                <a href="/" class="text-xl font-bold text-gray-800 hover:text-gray-600 transition-colors ml-2">
+                    SUITS
+                </a>
+            </div>
+            <button onclick="newChat()" class="w-full mt-4 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center">
+                <i class="fas fa-plus mr-2"></i>
+                <span class="sidebar-text">New Chat</span>
+            </button>
+        </div>
+        
+        <!-- Navigation -->
+        <div class="flex-1 overflow-y-auto">
+            <div class="p-4">
+                <h3 class="recent-chats-heading text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Recent Chats</h3>
+                <div id="sessions-list" class="space-y-1">
+                    {% for session in chat_sessions %}
+                    <div class="sidebar-item p-3 rounded-lg cursor-pointer {% if session.id == active_session_id %}active{% endif %}" 
+                         onclick="switchChatSession({{ session.id }})">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mr-3">
+                                <i class="fas fa-{% if session.document_id %}file-alt{% else %}comment{% endif %} text-white text-xs"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-gray-900 truncate">
+                                    {% if session.document_id %}
+                                        {{ session.document.filename }}
+                                    {% else %}
+                                        {% set first_message = session.chat_history[0].user_input[:25] + '...' if session.chat_history else 'New Chat' %}
+                                        {{ first_message }}
+                                    {% endif %}
+                                </div>
+                                <div class="text-xs text-gray-500">{{ session.created_at.strftime('%m/%d %H:%M') }}</div>
+                            </div>
+                            <button class="delete-chat-btn sidebar-text p-1 rounded text-red-600 hover:bg-red-50 ml-2" 
+                                    onclick="event.stopPropagation(); deleteChatSession({{ session.id }})">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- User Section -->
+        <div class="p-4 border-t border-gray-200">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center mr-3">
+                        <i class="fas fa-user text-white text-xs"></i>
+                    </div>
+                    <div class="sidebar-text">
+                        <div class="text-sm font-medium text-gray-900">{{ user.name }}</div>
+                        <div class="text-xs text-gray-500">{{ user.email }}</div>
+                    </div>
+                </div>
+                <button onclick="logout()" class="p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col">
+        <!-- Chat Messages -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6">
+            <div class="max-w-4xl mx-auto">
+                {% if chat_history %}
+                    {% for message in chat_history %}
+                        {% if message.user_input %}
+                            <div class="flex justify-end mb-6 message-container">
+                                <div class="chat-bubble-user rounded-2xl px-4 py-3 max-w-xl shadow-sm">
+                                    <div class="font-medium">{{ message.user_input }}</div>
+                                </div>
+                            </div>
+                        {% endif %}
+                        {% if message.assistant_reply %}
+                            <div class="flex justify-start mb-6 message-container">
+                                <div class="flex items-start">
+                                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center mr-3 mt-1">
+                                        <i class="fas fa-balance-scale text-white text-xs"></i>
+                                    </div>
+                                    <div class="chat-bubble-assistant rounded-2xl px-4 py-3 max-w-2xl shadow-sm">
+                                        <div class="whitespace-pre-wrap">{{ message.assistant_reply }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <div class="flex flex-col items-center justify-center h-full text-center">
+                        <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-6">
+                            <i class="fas fa-balance-scale text-white text-2xl"></i>
+                        </div>
+                        <h2 class="text-3xl font-bold text-gray-800 mb-2">Welcome to Suits AI</h2>
+                        <p class="text-gray-600 mb-8 max-w-md">Your intelligent legal assistant. Upload documents, ask questions, and get instant legal analysis.</p>
+                        <div class="flex gap-4">
+                            <button onclick="showUploadModal()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                                <i class="fas fa-upload mr-2"></i>
+                                Upload Document
+                            </button>
+                            <button onclick="document.getElementById('chat-input').focus()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors flex items-center">
+                                <i class="fas fa-comments mr-2"></i>
+                                Start Chat
+                            </button>
+                        </div>
+                    </div>
+                {% endif %}
+                
+                <!-- Typing Indicator -->
+                <div class="typing-indicator" id="typing-indicator">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center mr-3">
+                            <i class="fas fa-balance-scale text-white text-xs"></i>
+                        </div>
+                        <div class="typing-dots">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <span class="ml-2 text-sm text-gray-600">AI is thinking...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Chat Input -->
+        <div class="bg-white border-t border-gray-200 p-6">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex items-end gap-4">
+                    <button onclick="showUploadModal()" class="p-3 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                        <i class="fas fa-paperclip text-xl"></i>
+                    </button>
+                    <div class="flex-1 relative">
+                        <textarea 
+                            id="chat-input" 
+                            placeholder="Ask anything about your legal documents..."
+                            class="w-full p-4 pr-12 border border-gray-300 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            rows="1"
+                            onkeydown="handleKeyPress(event)"
+                            oninput="autoResizeTextarea(this)"
+                        ></textarea>
+                        <button 
+                            onclick="sendMessage()" 
+                            class="absolute right-3 bottom-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
+                            id="send-button"
+                        >
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex justify-center mt-3">
+                    <p class="text-xs text-gray-500">AI can make mistakes. Please verify important information.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div id="upload-modal" class="fixed inset-0 upload-modal hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-8 m-4 max-w-md w-full shadow-2xl">
+        <h3 class="text-2xl font-bold text-gray-800 mb-6">Upload Document</h3>
+        
+        <div class="upload-zone rounded-xl p-8 text-center mb-6" 
+             ondrop="handleDrop(event)" 
+             ondragover="handleDragOver(event)"
+             ondragenter="handleDragEnter(event)"
+             ondragleave="handleDragLeave(event)">
+            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+            <p class="text-gray-600 mb-2">Drop files here or click to browse</p>
+            <p class="text-sm text-gray-500">PDF, DOC, DOCX, TXT files supported</p>
+            <input type="file" id="file-input" accept=".pdf,.txt,.doc,.docx" class="hidden" onchange="handleFileSelect(event)">
+        </div>
+        
+        <div class="flex justify-end gap-3">
+            <button onclick="hideUploadModal()" class="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors">Cancel</button>
+            <button onclick="document.getElementById('file-input').click()" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                Choose File
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentSessionId = {{ active_session_id or 'null' }};
+    let isTyping = false;
+    
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        sidebar.classList.toggle('collapsed');
+    }
+    
+    function handleKeyPress(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+    
+    function sendMessage() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+        
+        if (!message || isTyping) return;
+        
+        // Add user message to chat
+        addMessageToChat(message, 'user');
+        input.value = '';
+        input.style.height = 'auto';
+        
+        // Show typing indicator
+        showTypingIndicator();
+        
+        // If no session, create one first
+        if (!currentSessionId) {
+            createNewSession().then(() => {
+                sendChatMessage(message);
+            });
+        } else {
+            sendChatMessage(message);
+        }
+    }
+    
+    function sendChatMessage(message) {
+        const formData = new FormData();
+        formData.append('message', message);
+        formData.append('session_id', currentSessionId);
+        
+        fetch('/chat', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideTypingIndicator();
+            if (data.success) {
+                addMessageToChat(data.reply, 'assistant');
+            } else {
+                addMessageToChat('Error: ' + data.error, 'assistant');
+            }
+        })
+        .catch(error => {
+            hideTypingIndicator();
+            console.error('Error:', error);
+            addMessageToChat('Error sending message', 'assistant');
+        });
+    }
+    
+    function addMessageToChat(message, sender) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageContainer = document.createElement('div');
+        messageContainer.className = `message-container mb-6`;
+        
+        const isUser = sender === 'user';
+        
+        if (isUser) {
+            messageContainer.className += ' flex justify-end';
+            messageContainer.innerHTML = `
+                <div class="chat-bubble-user rounded-2xl px-4 py-3 max-w-xl shadow-sm">
+                    <div class="font-medium">${message}</div>
+                </div>
+            `;
+        } else {
+            messageContainer.className += ' flex justify-start';
+            messageContainer.innerHTML = `
+                <div class="flex items-start">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center mr-3 mt-1">
+                        <i class="fas fa-balance-scale text-white text-xs"></i>
+                    </div>
+                    <div class="chat-bubble-assistant rounded-2xl px-4 py-3 max-w-2xl shadow-sm">
+                        <div class="whitespace-pre-wrap">${message}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Remove welcome message if it exists
+        const welcomeMessage = chatMessages.querySelector('.flex.flex-col.items-center.justify-center.h-full');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        chatMessages.querySelector('.max-w-4xl').appendChild(messageContainer);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function showTypingIndicator() {
+        isTyping = true;
+        document.getElementById('typing-indicator').classList.add('show');
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function hideTypingIndicator() {
+        isTyping = false;
+        document.getElementById('typing-indicator').classList.remove('show');
+    }
+    
+    function deleteChatSession(sessionId) {
+        fetch(`/chat-session/${sessionId}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (sessionId === currentSessionId) {
+                    createNewSession();
+                } else {
+                    updateSessionsList();
+                }
+                showToast('Chat session deleted', 'success');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error deleting chat session', 'error');
+        });
+    }
+    function newChat() {
+        fetch('/new-chat', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentSessionId = data.session_id;
+                clearChat();
+                updateSessionsList();
+                showToast('New chat started', 'success');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error starting new chat', 'error');
+        });
+    }
+    
+    function createNewSession() {
+        return fetch('/new-chat', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentSessionId = data.session_id;
+                updateSessionsList();
+            }
+        });
+    }
+    
+    function switchChatSession(sessionId) {
+        if (sessionId === currentSessionId) return;
+        
+        currentSessionId = sessionId;
+        
+        fetch(`/chat-history/${sessionId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                clearChat();
+                data.history.forEach(msg => {
+                    if (msg.user_input) {
+                        addMessageToChat(msg.user_input, 'user');
+                    }
+                    if (msg.assistant_reply) {
+                        addMessageToChat(msg.assistant_reply, 'assistant');
+                    }
+                });
+                updateSessionsList();
+            }
+        });
+    }
+    
+    function clearChat() {
+        const chatContainer = document.querySelector('#chat-messages .max-w-4xl');
+        chatContainer.innerHTML = `
+            <div class="typing-indicator" id="typing-indicator">
+                <div class="flex items-center">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center mr-3">
+                        <i class="fas fa-balance-scale text-white text-xs"></i>
+                    </div>
+                    <div class="typing-dots">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <span class="ml-2 text-sm text-gray-600">AI is thinking...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    function updateSessionsList() {
+        fetch('/get-chat-sessions')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const sessionsList = document.getElementById('sessions-list');
+                sessionsList.innerHTML = '';
+                
+                data.sessions.forEach(session => {
+                    const sessionDiv = document.createElement('div');
+                    sessionDiv.className = `sidebar-item p-3 rounded-lg cursor-pointer ${session.id == currentSessionId ? 'active' : ''}`;
+                    sessionDiv.onclick = () => switchChatSession(session.id);
+                    
+                    const sessionName = session.document_id ? 
+                        session.document_filename : 
+                        (session.first_message ? session.first_message.substring(0, 25) + '...' : 'New Chat');
+                    
+                    sessionDiv.innerHTML = `
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mr-3">
+                                <i class="fas fa-${session.document_id ? 'file-alt' : 'comment'} text-white text-xs"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-gray-900 truncate">${sessionName}</div>
+                                <div class="text-xs text-gray-500">${new Date(session.created_at).toLocaleDateString()}</div>
+                            </div>
+                            <button class="delete-chat-btn sidebar-text p-1 rounded text-red-600 hover:bg-red-50 ml-2" 
+                                    onclick="event.stopPropagation(); deleteChatSession(${session.id})">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    `;
+                    
+                    sessionsList.appendChild(sessionDiv);
+                });
+            }
+        });
+    }
+    
+    function showUploadModal() {
+        document.getElementById('upload-modal').classList.remove('hidden');
+    }
+    
+    function hideUploadModal() {
+        document.getElementById('upload-modal').classList.add('hidden');
+    }
+    
+    function handleDragOver(event) {
+        event.preventDefault();
+        event.currentTarget.classList.add('dragover');
+    }
+    
+    function handleDragEnter(event) {
+        event.preventDefault();
+    }
+    
+    function handleDragLeave(event) {
+        event.currentTarget.classList.remove('dragover');
+    }
+    
+    function handleDrop(event) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('dragover');
+        
+        const files = event.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    }
+    
+    function handleFileSelect(event) {
+        const files = event.target.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    }
+    
+    function handleFileUpload(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        showToast('Uploading file...', 'info');
+        
+        fetch('/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentSessionId = data.session_id;
+                clearChat();
+                addMessageToChat(`Uploaded: ${file.name}`, 'user');
+                addMessageToChat(data.analysis, 'assistant');
+                hideUploadModal();
+                updateSessionsList();
+                showToast('File uploaded successfully', 'success');
+            } else {
+                showToast('Error: ' + data.error, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error uploading file', 'error');
+        });
+    }
+    
+    function logout() {
+        window.location.href = '/logout';
+    }
+    
+    // Initialize
+    if (!currentSessionId) {
+        createNewSession();
+    }
+    
+    // Auto-focus on chat input
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('chat-input').focus();
+    });
+</script>
+{% endblock %}
