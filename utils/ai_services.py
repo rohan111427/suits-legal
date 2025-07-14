@@ -396,7 +396,7 @@ def chat_with_rag(user_input: str, document=None, session_id: str = None, db_ses
             {json.dumps(document.structured_json, indent=2)}
             
             CONVERSATION HISTORY (most relevant messages):
-{'\n'.join([f"- User: {msg.user_input}\n  Assistant: {msg.assistant_reply}" for msg in context_messages[:3] if msg.user_input and msg.assistant_reply])}
+{'\n'.join([f"- User: {msg.user_input}\n  Assistant: {getattr(msg, 'content', '')}" for msg in context_messages[:3] if msg.user_input and hasattr(msg, 'content') and msg.content])}
             
             USER QUESTION: {user_input}
             
@@ -410,7 +410,7 @@ def chat_with_rag(user_input: str, document=None, session_id: str = None, db_ses
             You are Suits AI, a helpful and professional legal assistant with extensive legal knowledge.
             
             CONVERSATION HISTORY (most relevant messages):
-{'\n'.join([f"- User: {msg.user_input}\n  Assistant: {msg.assistant_reply}" for msg in context_messages[:5] if msg.user_input and msg.assistant_reply])}
+{'\n'.join([f"- User: {msg.user_input}\n  Assistant: {getattr(msg, 'content', '')}" for msg in context_messages[:5] if msg.user_input and hasattr(msg, 'content') and msg.content])}
             
             USER QUESTION: {user_input}
             
