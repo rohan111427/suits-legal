@@ -123,6 +123,48 @@
         border-color: #3b82f6;
         background-color: #eff6ff;
     }
+    
+    /* Loading indicator styles */
+    .upload-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+    
+    .upload-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #e5e7eb;
+        border-top: 4px solid #3b82f6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+    
+    .upload-progress {
+        width: 100%;
+        height: 8px;
+        background-color: #e5e7eb;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    
+    .upload-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+        border-radius: 4px;
+        transition: width 0.3s ease;
+        animation: progress-pulse 2s infinite;
+    }
+    
+    @keyframes progress-pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
+    }
 </style>
 
 <div class="flex h-screen bg-gray-50">
@@ -308,6 +350,16 @@
             <p class="text-gray-600 mb-2">Drop files here or click to browse</p>
             <p class="text-sm text-gray-500">PDF, DOC, DOCX, TXT files supported</p>
             <input type="file" id="file-input" accept=".pdf,.txt,.doc,.docx" class="hidden" onchange="handleFileSelect(event)">
+        </div>
+        
+        <!-- Loading Indicator -->
+        <div id="upload-loading" class="upload-loading hidden">
+            <div class="upload-spinner"></div>
+            <div class="upload-progress">
+                <div class="upload-progress-bar" style="width: 100%"></div>
+            </div>
+            <p class="text-gray-600 text-sm">Uploading file...</p>
+            <p class="text-xs text-gray-500 mt-1">Please wait while your document is being processed</p>
         </div>
         
         <div class="flex justify-end gap-3">
@@ -563,10 +615,36 @@
     
     function showUploadModal() {
         document.getElementById('upload-modal').classList.remove('hidden');
+        // Reset UI state
+        showUploadZone();
     }
     
     function hideUploadModal() {
         document.getElementById('upload-modal').classList.add('hidden');
+        // Reset upload state
+        hideUploadLoading();
+        document.getElementById('file-input').value = '';
+    }
+    
+    function showUploadZone() {
+        document.querySelector('.upload-zone').classList.remove('hidden');
+        document.querySelector('.upload-modal .flex.justify-end').classList.remove('hidden');
+        document.getElementById('upload-loading').classList.add('hidden');
+    }
+    
+    function hideUploadZone() {
+        document.querySelector('.upload-zone').classList.add('hidden');
+        document.querySelector('.upload-modal .flex.justify-end').classList.add('hidden');
+    }
+    
+    function showUploadLoading() {
+        hideUploadZone();
+        document.getElementById('upload-loading').classList.remove('hidden');
+    }
+    
+    function hideUploadLoading() {
+        document.getElementById('upload-loading').classList.add('hidden');
+        showUploadZone();
     }
     
     function handleDragOver(event) {
@@ -603,6 +681,8 @@
         const formData = new FormData();
         formData.append('file', file);
         
+        // Show loading indicator
+        showUploadLoading();
         showToast('Uploading file...', 'info');
         
         fetch('/upload', {
@@ -613,19 +693,19 @@
         .then(data => {
             if (data.success) {
                 currentSessionId = data.session_id;
-                clearChat();
-                addMessageToChat(`Uploaded: ${file.name}`, 'user');
-                addMessageToChat(data.analysis, 'assistant');
+                switchChatSession(data.session_id);
                 hideUploadModal();
                 updateSessionsList();
                 showToast('File uploaded successfully', 'success');
             } else {
                 showToast('Error: ' + data.error, 'error');
+                hideUploadLoading(); // Show upload zone again on error
             }
         })
         .catch(error => {
             console.error('Error:', error);
             showToast('Error uploading file', 'error');
+            hideUploadLoading(); // Show upload zone again on error
         });
     }
     

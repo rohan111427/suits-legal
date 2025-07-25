@@ -133,19 +133,13 @@ async def upload_file(request: Request, file: UploadFile = File(...), db: Sessio
         # Extract text
         extracted_text = extract_text_from_file(file_content, file.filename)
         
-        # Summarize with BART
-        summary = summarize_text(extracted_text)
-        
-        # Structure with Gemini
-        structured_data = structure_legal_document(extracted_text, summary)
-        
-        # Save document
+        # Save document (without processing)
         document = Document(
             user_id=user.id,
             filename=file.filename,
             raw_text=extracted_text,
-            summary=summary,
-            structured_json=structured_data
+            summary=None,  # Will be processed on first user input
+            structured_json=None  # Will be processed on first user input
         )
         db.add(document)
         db.commit()
@@ -157,12 +151,11 @@ async def upload_file(request: Request, file: UploadFile = File(...), db: Sessio
         db.commit()
         db.refresh(chat_session)
         
-        # Add analysis to chat history
-        analysis_text = format_analysis(structured_data)
+        # Add upload confirmation to chat history (no analysis yet)
         chat_entry = ChatHistory(
             session_id=chat_session.id,
-            user_input=f"Uploaded document: {file.filename}",
-            assistant_reply=analysis_text
+            user_input=None,  # No user input yet
+            assistant_reply=f"📄 Document '{file.filename}' has been uploaded successfully!\n\nI'm ready to help you with any questions about this document. What would you like to know?"
         )
         db.add(chat_entry)
         db.commit()
@@ -171,7 +164,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), db: Sessio
             "success": True,
             "document_id": document.id,
             "session_id": chat_session.id,
-            "analysis": analysis_text
+            "filename": file.filename
         })
         
     except Exception as e:
@@ -203,6 +196,44 @@ async def chat(request: Request, db: Session = Depends(get_db)):
     document = None
     if session.document_id:
         document = db.query(Document).filter(Document.id == session.document_id).first()
+        
+        # Check if this is the first user input and document needs processing
+        if document and document.summary is None and document.structured_json is None:
+            # This is the first user input - process the document now
+            try:
+                # Process the document
+                summary = summarize_text(document.raw_text)
+                structured_data = structure_legal_document(document.raw_text, summary)
+                
+                # Update the document with processed data
+                document.summary = summary
+                document.structured_json = structured_data
+                db.commit()
+                
+                # Add processing notification to chat
+                processing_message = f"🔍 Processing your document '{document.filename}'...\n\n"
+                analysis_text = format_analysis(structured_data)
+                full_analysis = processing_message + analysis_text + "\n\n" + "Now I'm ready to answer your question!"
+                
+                # Add analysis to chat history
+                analysis_entry = ChatHistory(
+                    session_id=session_id,
+                    user_input=None,
+                    assistant_reply=full_analysis
+                )
+                db.add(analysis_entry)
+                db.commit()
+                
+            except Exception as e:
+                # If processing fails, continue with the chat but note the error
+                error_message = f"⚠️ There was an issue processing your document, but I can still help with general questions about it.\n\nError: {str(e)}"
+                error_entry = ChatHistory(
+                    session_id=session_id,
+                    user_input=None,
+                    assistant_reply=error_message
+                )
+                db.add(error_entry)
+                db.commit()
     
     # Generate response using RAG
     assistant_reply = chat_with_rag(user_input, document, session_id, db)
